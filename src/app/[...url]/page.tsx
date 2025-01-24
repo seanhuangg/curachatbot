@@ -1,42 +1,46 @@
-import { ChatWrapper } from "@/components/ChatWrapper";
-import { ragChat } from "@/lib/rag-chat";
-import { redis } from "@/lib/redis";
-import { cookies } from "next/headers";
+import { ChatWrapper } from "@/components/ChatWrapper"
+import { ragChat } from "@/lib/rag-chat"
+import { redis } from "@/lib/redis"
+import { cookies } from "next/headers"
 
 interface PageProps {
-    params: Promise<{
+    params: {
         url: string | string[] | undefined;
-    }>;
+    }
 }
 
 function reconstructUrl({ url }: { url: string[] }) {
-    const decodedComponents = url.map((component) => decodeURIComponent(component));
+    const decoded = url.map((component) => decodeURIComponent(component))
 
-    return decodedComponents.join("/");
+    return decoded.join("/")
 }
 
 const Page = async ({ params }: PageProps) => {
-    const resolvedParams = await params;
-    const sessionCookie = (await cookies()).get("sessionId")?.value;
-    const reconstructedUrl = reconstructUrl({ url: resolvedParams.url as string[] });
+    const sessionCookie = (await cookies()).get("sessionId")?.value
 
-    const sessionId = (reconstructedUrl + "--" + sessionCookie).replace(/\//g, "");
+    const resolvedParams = await params
+    const reconstructedUrl = reconstructUrl({ url: resolvedParams.url as string[] })
 
-    const isAlreadyIndexed = await redis.sismember("indexed-urls", reconstructedUrl);
+    //unique cookie for every user
+    const sessionId = (reconstructedUrl + "--" + sessionCookie).replace(/\//g, "")
 
-    const initialMessages = await ragChat.history.getMessages({ amount: 10, sessionId });
+    const isIndexed = await redis.sismember("indexed-urls", reconstructedUrl)
 
-    if (!isAlreadyIndexed) {
+    const initialMessages = await ragChat.history.getMessages({ amount: 10, sessionId })
+
+    if (!isIndexed) {
+        // index website data
+        //resconstruct needed for link
         await ragChat.context.add({
             type: "html",
             source: reconstructedUrl,
             config: { chunkOverlap: 50, chunkSize: 200 },
-        });
+        })
 
-        await redis.sadd("indexed-urls", reconstructedUrl);
+        await redis.sadd("indexed-urls", reconstructedUrl)
     }
 
-    return <ChatWrapper sessionId={sessionId} initialMessages={initialMessages} />;
-};
+    return <ChatWrapper sessionId={sessionId} initialMessages={initialMessages} />
+}
 
-export default Page;
+export default Page
